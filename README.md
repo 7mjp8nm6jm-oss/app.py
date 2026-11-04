@@ -58,4 +58,98 @@
     <script type="module" src="/main.js"></script>
 </body>
 </html>
+import { createClient } from '@supabase/supabase-js'
+
+// Inicializar Supabase usando las variables de entorno de Vite
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabase = createClient(supabaseUrl, supabaseKey)
+
+// Elementos del DOM
+const recipeSelect = document.getElementById('recipe-select')
+const pxInput = document.getElementById('px-input')
+const calculateBtn = document.getElementById('calculate-btn')
+const resultsTableBody = document.getElementById('results-table-body')
+
+// 1. Cargar las recetas al iniciar la página
+async function cargarRecetas() {
+    const { data, error } = await supabase.from('recipes').select('id, name')
+    
+    if (error) {
+        console.error('Error al cargar recetas:', error)
+        return
+    }
+
+    recipeSelect.innerHTML = '<option value="">-- Selecciona un plato --</option>'
+    data.forEach(recipe => {
+        const option = document.createElement('option')
+        option.value = recipe.id
+        option.textContent = recipe.name
+        recipeSelect.appendChild(option)
+    })
+}
+
+// 2. Calcular inventario al hacer clic en el botón
+async function calcularInventario() {
+    const recipeId = recipeSelect.value
+    const px = parseInt(pxInput.value)
+
+    if (!recipeId) {
+        alert('Por favor selecciona una receta.')
+        return
+    }
+
+    // Consultamos los ingredientes de la receta uniendo la tabla relacional con los ingredientes
+    const { data, error } = await supabase
+        .from('recipe_ingredients')
+        .select(`
+            quantity_per_base_portion,
+            ingredients (
+                name,
+                unit_of_measure,
+                current_stock
+            )
+        `)
+        .eq('recipe_id', recipeId)
+
+    if (error) {
+        console.error('Error al calcular:', error)
+        return
+    }
+
+    // Limpiar tabla anterior
+    resultsTableBody.innerHTML = ''
+
+    if (data.length === 0) {
+        resultsTableBody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Esta receta no tiene ingredientes registrados.</td></tr>`
+        return
+    }
+
+    // Rellenar la tabla con el cálculo por px
+    data.forEach(item => {
+        const ingrediente = item.ingredients
+        const cantidadNecesaria = item.quantity_per_base_portion * px
+        const diferencia = ingrediente.current_stock - cantidadNecesaria
+
+        // Definir color de alerta si falta stock
+        const stockClass = diferencia < 0 ? 'text-red-600 font-bold' : 'text-green-600'
+
+        const row = `
+            <tr class="border-b">
+                <td class="p-2 border">${ingrediente.name}</td>
+                <td class="p-2 border font-semibold">${cantidadNecesaria.toFixed(2)}</td>
+                <td class="p-2 border">${ingrediente.unit_of_measure}</td>
+                <td class="p-2 border">${ingrediente.current_stock}</td>
+                <td class="p-2 border ${stockClass}">${diferencia.toFixed(2)}</td>
+            </tr>
+        `
+        resultsTableBody.innerHTML += row
+    })
+}
+
+// Eventos
+calculateBtn.addEventListener('click', calcularInventario)
+
+// Inicializar la carga de recetas al abrir la app
+cargarRecetas()
 
